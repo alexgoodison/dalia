@@ -5,6 +5,7 @@
 
 # backend
 **/__pycache__
+**/tmp
 
 # env
 */.venv
