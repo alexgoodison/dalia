@@ -5,7 +5,7 @@ import logging
 from typing import Any, Dict, Optional
 
 import requests
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from requests.auth import HTTPBasicAuth
 
 logger = logging.getLogger(__name__)
@@ -224,5 +224,49 @@ class HistoryTransactionItem(BaseModel):
 class PaginatedHistoryTransactions(BaseModel):
     items: list[HistoryTransactionItem]
     next_page_path: str | None = Field(default=None, alias="nextPagePath")
+    next_cursor: str | None = Field(
+        default=None,
+        alias="nextCursor",
+        serialization_alias="nextCursor",
+    )
+    next_time: str | None = Field(
+        default=None,
+        alias="nextTime",
+        serialization_alias="nextTime",
+    )
 
     model_config = {"populate_by_name": True}
+
+    @model_validator(mode="after")
+    def set_pagination_params(cls, values: "PaginatedHistoryTransactions") -> "PaginatedHistoryTransactions":
+        if not values.next_cursor:
+            values.next_cursor = cls._extract_param(
+                values.next_page_path, "cursor")
+
+        if not values.next_time:
+            values.next_time = cls._extract_param(
+                values.next_page_path, "time")
+
+        return values
+
+    @staticmethod
+    def _extract_param(next_page_path: str | None, param_key: str) -> str | None:
+        if not next_page_path:
+            return None
+
+        candidates: list[str] = []
+        parts = next_page_path.split("?", 1)
+        if len(parts) == 2:
+            candidates.extend(parts)
+        else:
+            candidates.append(next_page_path)
+
+        for candidate in candidates:
+            query_pairs = [
+                fragment.split("=", 1) for fragment in candidate.split("&") if "=" in fragment
+            ]
+            for key, value in query_pairs:
+                if key == param_key and value:
+                    return value
+
+        return None

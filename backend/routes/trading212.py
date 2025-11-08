@@ -6,7 +6,7 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
-from backend.services import Trading212Client, Trading212Error
+from backend.services import PaginatedHistoryTransactions, Trading212Client, Trading212Error
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +26,7 @@ def _build_trading212_client() -> Trading212Client:
     return Trading212Client(api_key=api_key, api_secret=api_secret)
 
 
-@router.get("/transactions")
+@router.get("/transactions", response_model=PaginatedHistoryTransactions)
 async def trading212_transactions(
     cursor: Optional[str] = Query(
         default=None, description="Pagination cursor returned by Trading 212."),
@@ -40,7 +40,7 @@ async def trading212_transactions(
         le=50,
         description="Maximum number of transactions to return (1-50).",
     ),
-) -> dict[str, object]:
+) -> PaginatedHistoryTransactions:
     client = _build_trading212_client()
     try:
         response = await client.list_transactions(cursor=cursor, time=time, limit=limit)
@@ -53,4 +53,4 @@ async def trading212_transactions(
     finally:
         await client.aclose()
 
-    return response.model_dump(by_alias=True)
+    return response
