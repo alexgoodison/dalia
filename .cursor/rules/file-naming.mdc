@@ -1,5 +1,0 @@
----
-alwaysApply: true
----
-
-- Always name React component files in pascal case (e.g. MessageComposer.tsx)

@@ -1,0 +1,6 @@
+---
+alwaysApply: true
+---
+
+- Always name React component files in pascal case (e.g. MessageComposer.tsx)
+- After adding new API routes to the backend, regenerate the schemas and hooks on the frontend with `npm run generate:api`
