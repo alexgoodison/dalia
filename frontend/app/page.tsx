@@ -1,4 +1,5 @@
 import { MessageComposer } from "../components/MessageComposer";
+import { BackendStatusTag } from "../components/BackendStatusTag";
 
 export default function Home() {
   return (
@@ -10,6 +11,7 @@ export default function Home() {
           </h1>
         </div>
         <MessageComposer />
+        <BackendStatusTag />
       </main>
     </div>
   );

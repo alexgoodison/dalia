@@ -31,3 +31,14 @@ chmod +x ./run.sh
 ```
 
 The FastAPI server will be available on `http://localhost:8000` and the Next.js app on `http://localhost:3000`.
+
+### Generate React Query hooks
+
+1. Ensure the FastAPI dependencies are installed (`pip install -r backend/requirements.txt`) and the frontend dependencies are installed (`npm install` inside `frontend/`).
+2. From inside the `frontend/` directory, run:
+
+   ```bash
+   npm run generate:api
+   ```
+
+   This will export the FastAPI OpenAPI schema to `frontend/openapi.json` and regenerate the typed React Query hooks inside `frontend/lib/api/` using Orval.

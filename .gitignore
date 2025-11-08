@@ -53,3 +53,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# orval generated artifacts
+frontend/openapi.json
+frontend/lib/api/client.ts
+frontend/lib/api/model
