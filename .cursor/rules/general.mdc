@@ -3,4 +3,4 @@ alwaysApply: true
 ---
 
 - Always name React component files in pascal case (e.g. MessageComposer.tsx)
-- After adding new API routes to the backend, regenerate the schemas and hooks on the frontend with `npm run generate:api`
+- After adding new FastAPI routes to the backend, always regenerate the schemas and hooks on the frontend with `npm run generate:api` in the ./frontend folder
