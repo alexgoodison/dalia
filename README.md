@@ -18,7 +18,11 @@ npm install
 
 # Backend
 cd ../backend
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
+# deactivate when you're done working on the backend
+deactivate
 ```
 
 ### Run frontend and backend together
@@ -31,6 +35,10 @@ chmod +x ./run.sh
 ```
 
 The FastAPI server will be available on `http://localhost:8000` and the Next.js app on `http://localhost:3000`.
+
+> `./run.sh` automatically ensures the backend virtual environment at `backend/.venv` exists
+> and installs dependencies when `backend/requirements.txt` changes, so you do not need to
+> manually activate the environment when using the combined runner.
 
 ### Generate React Query hooks
 

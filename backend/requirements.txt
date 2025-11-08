@@ -5,4 +5,5 @@ requests==2.32.3
 python-dotenv==1.0.1
 agno==2.2.9
 google-genai==1.49.0
+SQLAlchemy==2.0.36
 
