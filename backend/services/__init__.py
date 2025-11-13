@@ -1,5 +1,6 @@
 """Service layer utilities for the backend."""
 
+from .alphavantage import AlphaVantageClient, AlphaVantageError
 from .trading212 import (
     HistoryTransactionItem,
     PaginatedHistoryTransactions,
@@ -8,6 +9,8 @@ from .trading212 import (
 )
 
 __all__ = [
+    "AlphaVantageClient",
+    "AlphaVantageError",
     "Trading212Client",
     "Trading212Error",
     "HistoryTransactionItem",
