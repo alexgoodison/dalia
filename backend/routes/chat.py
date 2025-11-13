@@ -37,20 +37,6 @@ class ChatResponse(BaseModel):
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 
-@router.post("", response_model=ChatResponse, status_code=status.HTTP_200_OK)
-async def post_chat(request: ChatRequest) -> ChatResponse:
-    manager = get_chat_manager()
-    conversation_id, session = manager.get_or_create(request.conversation_id)
-
-    latest_message_dict = await anyio.to_thread.run_sync(session.send, request.message)
-    all_messages = await anyio.to_thread.run_sync(session.get_messages)
-    return ChatResponse(
-        conversation_id=conversation_id,
-        messages=[ChatMessageModel(**message) for message in all_messages],
-        latest_message=ChatMessageModel(**latest_message_dict),
-    )
-
-
 async def _stream_chat_response(request: ChatRequest):
     """Async generator that streams agent output using SSE."""
 

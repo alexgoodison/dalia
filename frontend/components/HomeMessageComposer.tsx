@@ -3,8 +3,6 @@
 import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { postChatChatPost } from "../lib/api/client";
-import type { ChatResponse } from "../lib/api/model";
 import { MessageComposer } from "./MessageComposer";
 
 export function HomeMessageComposer() {
@@ -12,25 +10,19 @@ export function HomeMessageComposer() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleResponse = useCallback(
-    (response: ChatResponse) => {
-      if (!response?.conversation_id) {
-        return;
-      }
-
-      router.push(`/chat/${response.conversation_id}`);
-    },
-    [router]
-  );
-
   const handleSubmit = useCallback(
     async (message: string) => {
       try {
         setIsSubmitting(true);
         setError(null);
 
-        const response = await postChatChatPost({ message });
-        handleResponse(response.data);
+        const trimmed = message.trim();
+        if (!trimmed) {
+          return;
+        }
+
+        const params = new URLSearchParams({ message: trimmed });
+        router.push(`/chat?${params.toString()}`);
       } catch (err) {
         if (err instanceof Error) {
           setError(err.message);
@@ -43,7 +35,7 @@ export function HomeMessageComposer() {
         setIsSubmitting(false);
       }
     },
-    [handleResponse]
+    [router]
   );
 
   return (

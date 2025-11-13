@@ -1,6 +1,5 @@
 import { useCallback, useState } from "react";
 
-import { postChatChatPost } from "../api/client";
 import type { ChatMessageModel, ChatResponse } from "../api/model";
 
 export type ChatStreamEvent =
@@ -15,7 +14,6 @@ type SendMessageOptions = {
   onStreamEvent?: (event: ChatStreamEvent) => void;
   onResponse?: (response: ChatResponse) => void;
   onError?: (errorMessage: string) => void;
-  useStreaming?: boolean;
 };
 
 export function useChatSender(initialConversationId?: string) {
@@ -35,7 +33,6 @@ export function useChatSender(initialConversationId?: string) {
         onStreamEvent,
         onResponse,
         onError,
-        useStreaming = !!onStreamEvent,
       } = options;
 
       const trimmed = message.trim();
@@ -49,17 +46,6 @@ export function useChatSender(initialConversationId?: string) {
         onBeforeSend?.(trimmed);
 
         const effectiveConversationId = providedConversationId ?? conversationId;
-
-        if (!useStreaming) {
-          const response = await postChatChatPost({
-            message: trimmed,
-            conversation_id: effectiveConversationId ?? undefined,
-          });
-          const payload = response.data;
-          setConversationId(payload.conversation_id);
-          onResponse?.(payload);
-          return payload;
-        }
 
         const baseUrl =
           process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ?? "http://localhost:8000";

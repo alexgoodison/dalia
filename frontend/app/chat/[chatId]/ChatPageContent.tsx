@@ -18,7 +18,8 @@ import UserMessage from "./components/UserMessage";
 import { MessageComposer } from "../../../components/MessageComposer";
 
 type ChatPageContentProps = {
-  chatId: string;
+  chatId?: string;
+  initialMessage?: string;
 };
 
 const ADDITIONAL_INFORMATION_REGEX =
@@ -28,28 +29,41 @@ function stripAdditionalInformation(content?: string | null) {
   return content ? content.replace(ADDITIONAL_INFORMATION_REGEX, "").trim() : "";
 }
 
-export default function ChatPageContent({ chatId }: ChatPageContentProps) {
+export default function ChatPageContent({ chatId, initialMessage }: ChatPageContentProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const messageListRef = useRef<HTMLUListElement | null>(null);
+  const hasAutoSentInitialMessage = useRef(false);
 
   const [optimisticMessages, setOptimisticMessages] = useState<
     Array<ChatMessageModel & { pending?: boolean }>
   >([]);
   const [streamError, setStreamError] = useState<string | null>(null);
 
-  const initialConversationId = chatId === "new" ? undefined : chatId;
+  const pendingQueryKey = useMemo(() => ["/chat/pending"] as const, []);
+  const initialConversationId = chatId && chatId !== "new" ? chatId : undefined;
   const {
+    conversationId: activeConversationId,
     sendMessage: sendChatMessage,
     isSending,
     error: senderError,
     clearError,
   } = useChatSender(initialConversationId);
+  const effectiveConversationId = activeConversationId ?? initialConversationId;
+
+  const queryKey = useMemo(
+    () =>
+      effectiveConversationId
+        ? getGetChatChatConversationIdGetQueryKey(effectiveConversationId)
+        : pendingQueryKey,
+    [effectiveConversationId, pendingQueryKey]
+  );
 
   const { data, isLoading, isError, error, refetch, isFetching } =
-    useGetChatChatConversationIdGet(chatId, {
+    useGetChatChatConversationIdGet(effectiveConversationId ?? "", {
       query: {
-        queryKey: getGetChatChatConversationIdGetQueryKey(chatId),
+        enabled: !!effectiveConversationId,
+        queryKey,
       },
     });
 
@@ -58,8 +72,6 @@ export default function ChatPageContent({ chatId }: ChatPageContentProps) {
       messageListRef.current.scrollTop = messageListRef.current.scrollHeight;
     }
   }, [optimisticMessages, data]);
-
-  const queryKey = useMemo(() => getGetChatChatConversationIdGetQueryKey(chatId), [chatId]);
 
   const handleBeforeSend = useCallback(
     (content: string) => {
@@ -82,8 +94,11 @@ export default function ChatPageContent({ chatId }: ChatPageContentProps) {
     (response: ChatResponse) => {
       setStreamError(null);
       setOptimisticMessages([]);
+      const responseQueryKey = getGetChatChatConversationIdGetQueryKey(
+        response.conversation_id
+      );
       queryClient.setQueryData<AxiosResponse<ChatResponse> | undefined>(
-        queryKey,
+        responseQueryKey,
         (existing) => {
           if (!existing) {
             return {
@@ -99,7 +114,7 @@ export default function ChatPageContent({ chatId }: ChatPageContentProps) {
         }
       );
     },
-    [queryClient, queryKey]
+    [queryClient]
   );
 
   const handleStreamEvent = useCallback(
@@ -145,7 +160,6 @@ export default function ChatPageContent({ chatId }: ChatPageContentProps) {
   const handleSendMessage = useCallback(
     async (content: string) => {
       await sendChatMessage(content, {
-        useStreaming: true,
         onBeforeSend: handleBeforeSend,
         onStreamEvent: handleStreamEvent,
         onResponse: handleResponse,
@@ -154,6 +168,25 @@ export default function ChatPageContent({ chatId }: ChatPageContentProps) {
     },
     [handleBeforeSend, handleResponse, handleSendError, handleStreamEvent, sendChatMessage]
   );
+
+  useEffect(() => {
+    if (!initialMessage || initialConversationId || hasAutoSentInitialMessage.current) {
+      return;
+    }
+
+    hasAutoSentInitialMessage.current = true;
+    void handleSendMessage(initialMessage);
+  }, [handleSendMessage, initialConversationId, initialMessage]);
+
+  useEffect(() => {
+    if (chatId || !initialMessage) {
+      return;
+    }
+
+    if (activeConversationId) {
+      router.replace(`/chat/${activeConversationId}`, { scroll: false });
+    }
+  }, [activeConversationId, chatId, initialMessage, router]);
 
   const handleStartNewChat = () => {
     router.push("/");
