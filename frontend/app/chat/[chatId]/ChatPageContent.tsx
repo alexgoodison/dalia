@@ -255,8 +255,8 @@ export default function ChatPageContent({ chatId, initialMessage }: ChatPageCont
                       <AssistantMessage
                         key={index}
                         {...item}
-                        content=""
-                        optimisticContent={cleanedContent}
+                        content={cleanedContent}
+                        optimisticContent={item.content ?? undefined}
                       />
                     );
                   case "user":
