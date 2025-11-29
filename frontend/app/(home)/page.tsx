@@ -1,5 +1,5 @@
-import { BackendStatusTag } from "../components/BackendStatusTag";
-import { HomeMessageComposer } from "../components/HomeMessageComposer";
+import { BackendStatusTag } from "../../components/BackendStatusTag";
+import { HomeMessageComposer } from "../../components/HomeMessageComposer";
 
 export default function Home() {
   return (

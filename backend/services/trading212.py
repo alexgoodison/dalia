@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-import asyncio
-import logging
+from agno.tools import Toolkit
+
+from backend.config import TRADING212_API_KEY, TRADING212_API_SECRET
+
 from typing import Any, Dict, Optional
 
 import requests
 from pydantic import BaseModel, Field, model_validator
 from requests.auth import HTTPBasicAuth
-
-logger = logging.getLogger(__name__)
 
 
 class Trading212Error(RuntimeError):
@@ -21,60 +21,60 @@ class Trading212Error(RuntimeError):
 
 
 class Trading212Client:
-    """Async-friendly wrapper around the Trading 212 Public API."""
+    """Simple synchronous wrapper around the Trading 212 Public API."""
 
     _API_PREFIX = "/api/v0"
 
     def __init__(
         self,
-        api_key: str,
-        api_secret: str,
+        api_key: str | None,
+        api_secret: str | None,
         *,
         timeout: float = 10.0,
-        session: requests.Session | None = None,
     ) -> None:
+        if not api_key or not api_secret:
+            raise ValueError(
+                "TRADING212_API_KEY and TRADING212_API_SECRET environment variables are not set")
+
         self.base_url = "https://live.trading212.com"
         self.timeout = timeout
-        self._owns_session = session is None
-        self._session = session or requests.Session()
+        self._session = requests.Session()
         self._session.auth = HTTPBasicAuth(api_key, api_secret)
         self._session.headers.update({"Accept": "application/json"})
 
-    async def __aenter__(self) -> "Trading212Client":
-        return self
+    def get_account_info(self) -> Dict[str, Any]:
+        return self._request("GET", "/equity/account/info")
 
-    async def __aexit__(self, exc_type, exc, tb) -> None:
-        await self.aclose()
+    def get_account_cash(self) -> Dict[str, Any]:
+        return self._request("GET", "/equity/account/cash")
 
-    def close(self) -> None:
-        if self._owns_session:
-            self._session.close()
+    def list_orders(self) -> list[Dict[str, Any]]:
+        return self._request("GET", "/equity/orders")
 
-    async def aclose(self) -> None:
-        await asyncio.to_thread(self.close)
+    def get_order(self, order_id: int) -> Dict[str, Any]:
+        return self._request("GET", f"/equity/orders/{order_id}")
 
-    async def get_account_info(self) -> Dict[str, Any]:
-        return await self._request("GET", "/equity/account/info")
+    def cancel_order(self, order_id: int) -> Dict[str, Any] | None:
+        return self._request("DELETE", f"/equity/orders/{order_id}")
 
-    async def get_account_cash(self) -> Dict[str, Any]:
-        return await self._request("GET", "/equity/account/cash")
+    def get_portfolio(self) -> list[Dict[str, Any]]:
+        return self._request("GET", "/equity/portfolio")
 
-    async def list_orders(self) -> list[Dict[str, Any]]:
-        return await self._request("GET", "/equity/orders")
+    def get_position(self, ticker: str) -> Optional[Dict[str, Any]]:
+        return self._request("GET", f"/equity/portfolio/{ticker}", allow_404=True)
 
-    async def get_order(self, order_id: int) -> Dict[str, Any]:
-        return await self._request("GET", f"/equity/orders/{order_id}")
+    def list_positions(self, ticker: str | None = None) -> list[Dict[str, Any]]:
+        """
+        Fetch all open equity positions for the account.
 
-    async def cancel_order(self, order_id: int) -> Dict[str, Any] | None:
-        return await self._request("DELETE", f"/equity/orders/{order_id}")
+        Optionally filter by a specific instrument ticker (e.g. ``"AAPL_US_EQ"``).
+        """
+        params: Dict[str, Any] = {}
+        if ticker is not None:
+            params["ticker"] = ticker
+        return self._request("GET", "/equity/positions", params=params or None)
 
-    async def get_portfolio(self) -> list[Dict[str, Any]]:
-        return await self._request("GET", "/equity/portfolio")
-
-    async def get_position(self, ticker: str) -> Optional[Dict[str, Any]]:
-        return await self._request("GET", f"/equity/portfolio/{ticker}", allow_404=True)
-
-    async def list_historical_orders(
+    def list_historical_orders(
         self,
         *,
         cursor: int | None = None,
@@ -88,9 +88,9 @@ class Trading212Client:
             params["ticker"] = ticker
         if limit is not None:
             params["limit"] = limit
-        return await self._request("GET", "/equity/history/orders", params=params)
+        return self._request("GET", "/equity/history/orders", params=params)
 
-    async def list_dividends(
+    def list_dividends(
         self,
         *,
         cursor: int | None = None,
@@ -104,9 +104,9 @@ class Trading212Client:
             params["ticker"] = ticker
         if limit is not None:
             params["limit"] = limit
-        return await self._request("GET", "/history/dividends", params=params)
+        return self._request("GET", "/history/dividends", params=params)
 
-    async def list_transactions(
+    def list_transactions(
         self,
         *,
         cursor: str | None = None,
@@ -114,28 +114,28 @@ class Trading212Client:
         limit: int | None = None,
     ) -> "PaginatedHistoryTransactions":
         params: Dict[str, Any] = {}
-        if cursor is not None:
+        if cursor:
             params["cursor"] = cursor
-        if time is not None:
+        if time:
             params["time"] = time
-        if limit is not None:
+        if limit:
             params["limit"] = limit
-        payload = await self._request("GET", "/history/transactions", params=params)
+        payload = self._request("GET", "/history/transactions", params=params)
         return PaginatedHistoryTransactions.model_validate(payload)
 
-    async def list_instruments(self) -> list[Dict[str, Any]]:
-        return await self._request("GET", "/equity/metadata/instruments")
+    def list_instruments(self) -> list[Dict[str, Any]]:
+        return self._request("GET", "/equity/metadata/instruments")
 
-    async def list_exchanges(self) -> list[Dict[str, Any]]:
-        return await self._request("GET", "/equity/metadata/exchanges")
+    def list_exchanges(self) -> list[Dict[str, Any]]:
+        return self._request("GET", "/equity/metadata/exchanges")
 
-    async def request_report(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        return await self._request("POST", "/history/exports", json=payload)
+    def request_report(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        return self._request("POST", "/history/exports", json=payload)
 
-    async def list_reports(self) -> list[Dict[str, Any]]:
-        return await self._request("GET", "/history/exports")
+    def list_reports(self) -> list[Dict[str, Any]]:
+        return self._request("GET", "/history/exports")
 
-    async def _request(
+    def _request(
         self,
         method: str,
         path: str,
@@ -144,23 +144,7 @@ class Trading212Client:
         json: Dict[str, Any] | None = None,
         allow_404: bool = False,
     ) -> Any:
-        return await asyncio.to_thread(
-            self._request_sync,
-            method,
-            path,
-            params,
-            json,
-            allow_404,
-        )
-
-    def _request_sync(
-        self,
-        method: str,
-        path: str,
-        params: Dict[str, Any] | None,
-        json: Dict[str, Any] | None,
-        allow_404: bool,
-    ) -> Any:
+        """Make a synchronous request to the Trading 212 API."""
         url = f"{self.base_url}{self._API_PREFIX}{path}"
         try:
             response = self._session.request(
@@ -171,7 +155,6 @@ class Trading212Client:
                 timeout=self.timeout,
             )
         except requests.RequestException as exc:
-            logger.exception("HTTP error while calling Trading 212 API")
             raise Trading212Error("Failed to call Trading 212 API") from exc
 
         if response.status_code == 404 and allow_404:
@@ -238,16 +221,16 @@ class PaginatedHistoryTransactions(BaseModel):
     model_config = {"populate_by_name": True}
 
     @model_validator(mode="after")
-    def set_pagination_params(cls, values: "PaginatedHistoryTransactions") -> "PaginatedHistoryTransactions":
-        if not values.next_cursor:
-            values.next_cursor = cls._extract_param(
-                values.next_page_path, "cursor")
+    def set_pagination_params(self) -> "PaginatedHistoryTransactions":
+        if not self.next_cursor:
+            self.next_cursor = self._extract_param(
+                self.next_page_path, "cursor")
 
-        if not values.next_time:
-            values.next_time = cls._extract_param(
-                values.next_page_path, "time")
+        if not self.next_time:
+            self.next_time = self._extract_param(
+                self.next_page_path, "time")
 
-        return values
+        return self
 
     @staticmethod
     def _extract_param(next_page_path: str | None, param_key: str) -> str | None:
@@ -270,3 +253,39 @@ class PaginatedHistoryTransactions(BaseModel):
                     return value
 
         return None
+
+
+class Trading212Toolkit(Toolkit):
+
+    _client = Trading212Client(
+        api_key=TRADING212_API_KEY,
+        api_secret=TRADING212_API_SECRET,
+    )
+
+    def __init__(self, **kwargs):
+        super().__init__(name="trading212_tools", tools=[
+            self.get_account_info, self.get_account_cash, self.list_transactions, self.list_positions], **kwargs)
+
+    def get_account_info(self) -> Dict[str, Any]:
+        """
+        Get the account information from the Trading 212 API for the current user.
+        """
+        return self._client.get_account_info()
+
+    def get_account_cash(self) -> Dict[str, Any]:
+        """
+        Get the account cash from the Trading 212 API for the current user.
+        """
+        return self._client.get_account_cash()
+
+    def list_transactions(self) -> PaginatedHistoryTransactions:
+        """
+        List the transactions from the Trading 212 API for the current user.
+        """
+        return PaginatedHistoryTransactions.model_validate(self._client.list_transactions())
+
+    def list_positions(self, ticker: str | None = None) -> list[Dict[str, Any]]:
+        """
+        List the positions from the Trading 212 API for the current user.
+        """
+        return self._client.list_positions(ticker=ticker)

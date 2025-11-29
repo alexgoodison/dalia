@@ -1,9 +1,9 @@
 from functools import lru_cache
 from threading import Lock
-from typing import Dict, Iterator, List, Literal, Optional, TypedDict, Union
+from typing import Dict, List, Literal, Optional, TypedDict
 from uuid import uuid4
 
-from agno.agent import Agent, RunEvent, RunOutput, RunOutputEvent
+from agno.agent import Agent, RunOutput
 
 from backend.services.agent import dalia_agent
 
@@ -24,39 +24,21 @@ class ChatSession:
         self.conversation_id = conversation_id
 
     def send(self, content: str) -> ChatMessage:
-        result: Union[RunOutput, Iterator[RunOutputEvent]] = self.agent.run(
+        result: RunOutput = self.agent.run(
             content,
             session_id=self.conversation_id,
             add_history_to_context=True,
         )
 
-        if isinstance(result, Iterator):
-            response_chunks: List[str] = []
-            for event in result:
-                if event.event == RunEvent.run_content:
-                    chunk = str(event.content) if event.content else ""
-                    response_chunks.append(chunk)
-            response_text = "".join(response_chunks)
+        response_content = result.content
+        if isinstance(response_content, list):
+            response_text = "".join(str(part) for part in response_content)
         else:
-            response_content = result.content
-            if isinstance(response_content, list):
-                response_text = "".join(str(part) for part in response_content)
-            else:
-                response_text = str(response_content)
+            response_text = str(response_content)
 
         response: ChatMessage = ChatMessage(
             role="assistant", content=response_text)
         return response
-
-    def stream(self, content: str) -> Iterator[RunOutputEvent]:
-        """Stream agent response events."""
-        stream = self.agent.run(
-            content,
-            session_id=self.conversation_id,
-            add_history_to_context=True,
-            stream=True,
-        )
-        return stream
 
     def get_messages(self) -> List[ChatMessage]:
         """Get all messages from the Agno session."""
@@ -66,12 +48,13 @@ class ChatSession:
             )
             messages: List[ChatMessage] = []
             for msg in agno_messages:
-                role: ChatRole = "user" if msg.role == "user" else "assistant"
-                content = str(msg.content) if msg.content else ""
-                messages.append(ChatMessage(role=role, content=content))
+                if not (msg.role == "assistant" or msg.role == "user") or not msg.content:
+                    continue
+
+                messages.append(ChatMessage(
+                    role=msg.role, content=str(msg.content)))
             return messages
         except Exception:
-            # If session doesn't exist yet or has no messages, return empty list
             return []
 
 

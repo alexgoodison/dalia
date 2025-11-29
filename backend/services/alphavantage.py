@@ -1,13 +1,9 @@
 from __future__ import annotations
 
-import os
-import asyncio
-import logging
-from typing import Any, Dict, Iterable
+from backend.config import ALPHA_VANTAGE_API_KEY
+from typing import Any, Dict
 
 import requests
-
-logger = logging.getLogger(__name__)
 
 
 class AlphaVantageError(RuntimeError):
@@ -22,45 +18,31 @@ class AlphaVantageError(RuntimeError):
 class AlphaVantageClient:
     """Client for interacting with the Alpha Vantage market data API.
 
-    The client provides async-friendly wrapper methods around the most common endpoints.
+    The client provides simple synchronous wrapper methods around the most common endpoints.
     All methods default to returning JSON payloads.
     """
 
     _BASE_URL = "https://www.alphavantage.co/query"
 
-    def __init__(self, *, timeout: float = 10.0, session: requests.Session | None = None) -> None:
-        self.api_key = os.environ.get("ALPHA_VANTAGE_API_KEY")
-
+    def __init__(self, *, timeout: float = 10.0) -> None:
+        self.api_key = ALPHA_VANTAGE_API_KEY
         if not self.api_key:
             raise ValueError(
                 "ALPHA_VANTAGE_API_KEY environment variable is not set")
 
         self.timeout = timeout
-        self._session = session or requests.Session()
-        self._owns_session = session is None
 
-    async def __aenter__(self) -> "AlphaVantageClient":
-        return self
-
-    async def __aexit__(self, exc_type, exc, tb) -> None:
-        await self.aclose()
-
-    def close(self) -> None:
-        if self._owns_session:
-            self._session.close()
-
-    async def aclose(self) -> None:
-        await asyncio.to_thread(self.close)
-
-    async def get_global_quote(self, symbol: str, *, datatype: str = "json") -> Dict[str, Any]:
+    def get_global_quote(self, symbol: str, *, datatype: str = "json") -> Dict[str, Any]:
         """Retrieve the latest quote for a symbol."""
         params = {
             "symbol": symbol,
             "datatype": datatype,
+            "function": "GLOBAL_QUOTE",
+            "apikey": self.api_key
         }
-        return await self._request("GLOBAL_QUOTE", params)
+        return self._request(params)
 
-    async def get_daily_time_series(
+    def get_daily_time_series(
         self,
         symbol: str,
         *,
@@ -72,10 +54,12 @@ class AlphaVantageClient:
             "symbol": symbol,
             "outputsize": outputsize,
             "datatype": datatype,
+            "function": "TIME_SERIES_DAILY",
+            "apikey": self.api_key
         }
-        return await self._request("TIME_SERIES_DAILY", params)
+        return self._request(params)
 
-    async def get_intraday_time_series(
+    def get_intraday_time_series(
         self,
         symbol: str,
         *,
@@ -90,44 +74,40 @@ class AlphaVantageClient:
             "interval": interval,
             "outputsize": outputsize,
             "datatype": datatype,
+            "function": "TIME_SERIES_INTRADAY",
+            "apikey": self.api_key
         }
         if adjusted is not None:
             params["adjusted"] = "true" if adjusted else "false"
-        return await self._request("TIME_SERIES_INTRADAY", params)
+        return self._request(params)
 
-    async def search_symbol(self, keywords: str, *, datatype: str = "json") -> Dict[str, Any]:
+    def search_symbol(self, keywords: str, *, datatype: str = "json") -> Dict[str, Any]:
         """Search for symbols that match the provided keywords."""
         params = {
             "keywords": keywords,
             "datatype": datatype,
+            "function": "SYMBOL_SEARCH",
+            "apikey": self.api_key
         }
-        return await self._request("SYMBOL_SEARCH", params)
+        return self._request(params)
 
-    async def get_currency_exchange_rate(self, from_currency: str, to_currency: str, *, datatype: str = "json") -> Dict[str, Any]:
+    def get_currency_exchange_rate(self, from_currency: str, to_currency: str, *, datatype: str = "json") -> Dict[str, Any]:
         """Retrieve the latest foreign exchange rate between two currencies."""
         params = {
             "from_currency": from_currency,
             "to_currency": to_currency,
             "datatype": datatype,
+            "function": "CURRENCY_EXCHANGE_RATE",
+            "apikey": self.api_key
         }
-        return await self._request("CURRENCY_EXCHANGE_RATE", params)
+        return self._request(params)
 
-    async def _request(self, function_name: str, params: Dict[str, Any]) -> Dict[str, Any]:
-        return await asyncio.to_thread(self._request_sync, function_name, params)
-
-    def _request_sync(self, function_name: str, params: Dict[str, Any]) -> Dict[str, Any]:
-        query_params = {
-            "function": function_name,
-            "apikey": self.api_key,
-        }
-        query_params.update(self._filter_params(params))
-
+    def _request(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Make a synchronous request to the Alpha Vantage API."""
         try:
-            response = self._session.get(
-                self._BASE_URL, params=query_params, timeout=self.timeout)
+            response = requests.get(
+                self._BASE_URL, params=params, timeout=self.timeout)
         except requests.RequestException as exc:
-            logger.exception(
-                "HTTP error while calling Alpha Vantage API function %s", function_name)
             raise AlphaVantageError(
                 "Failed to call Alpha Vantage API") from exc
 
@@ -147,25 +127,6 @@ class AlphaVantageClient:
 
         self._ensure_success_payload(payload)
         return payload
-
-    @staticmethod
-    def _filter_params(params: Dict[str, Any]) -> Dict[str, Any]:
-        filtered: Dict[str, Any] = {}
-        for key, value in params.items():
-            if value is None:
-                continue
-            if isinstance(value, str):
-                if value:
-                    filtered[key] = value
-                continue
-            if isinstance(value, Iterable) and not isinstance(value, (str, bytes, dict)):
-                joined = ",".join(str(item)
-                                  for item in value if item is not None)
-                if joined:
-                    filtered[key] = joined
-                continue
-            filtered[key] = value
-        return filtered
 
     @staticmethod
     def _safe_json(response: requests.Response) -> Dict[str, Any] | None:

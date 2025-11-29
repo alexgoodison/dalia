@@ -2,11 +2,11 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import type { AxiosResponse } from "axios";
 
-import { useChatSender, type ChatStreamEvent } from "../../../lib/chat/useChatSender";
+import { useChatSender } from "../../../lib/chat/useChatSender";
 import type { ChatMessageModel, ChatResponse } from "../../../lib/api/model";
 import {
   getGetChatChatConversationIdGetQueryKey,
@@ -29,16 +29,25 @@ function stripAdditionalInformation(content?: string | null) {
   return content ? content.replace(ADDITIONAL_INFORMATION_REGEX, "").trim() : "";
 }
 
-export default function ChatPageContent({ chatId, initialMessage }: ChatPageContentProps) {
+export default function ChatPageContent({
+  chatId,
+  initialMessage: propInitialMessage,
+}: ChatPageContentProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const messageListRef = useRef<HTMLUListElement | null>(null);
   const hasAutoSentInitialMessage = useRef(false);
 
+  // Get initial message from URL search params (more reliable for client-side navigation)
+  // Fallback to prop for server-side rendering
+  const urlMessage = searchParams?.get("message")?.trim();
+  const initialMessage =
+    (urlMessage && urlMessage.length > 0 ? urlMessage : undefined) ?? propInitialMessage;
+
   const [optimisticMessages, setOptimisticMessages] = useState<
     Array<ChatMessageModel & { pending?: boolean }>
   >([]);
-  const [streamError, setStreamError] = useState<string | null>(null);
 
   const pendingQueryKey = useMemo(() => ["/chat/pending"] as const, []);
   const initialConversationId = chatId && chatId !== "new" ? chatId : undefined;
@@ -75,7 +84,6 @@ export default function ChatPageContent({ chatId, initialMessage }: ChatPageCont
 
   const handleBeforeSend = useCallback(
     (content: string) => {
-      setStreamError(null);
       clearError();
       setOptimisticMessages([
         { role: "user", content },
@@ -85,14 +93,12 @@ export default function ChatPageContent({ chatId, initialMessage }: ChatPageCont
     [clearError]
   );
 
-  const handleSendError = useCallback((message?: string) => {
+  const handleSendError = useCallback(() => {
     setOptimisticMessages([]);
-    setStreamError(message ?? "We couldn't send your message. Please try again.");
   }, []);
 
   const handleResponse = useCallback(
     (response: ChatResponse) => {
-      setStreamError(null);
       setOptimisticMessages([]);
       const responseQueryKey = getGetChatChatConversationIdGetQueryKey(
         response.conversation_id
@@ -113,70 +119,49 @@ export default function ChatPageContent({ chatId, initialMessage }: ChatPageCont
           return { ...existing, data: response };
         }
       );
+      // Invalidate and refetch to ensure we have the latest data
+      queryClient.invalidateQueries({ queryKey: responseQueryKey });
     },
     [queryClient]
-  );
-
-  const handleStreamEvent = useCallback(
-    (event: ChatStreamEvent) => {
-      if (event.type === "start") {
-        setStreamError(null);
-        clearError();
-        return;
-      }
-
-      if (event.type === "content") {
-        setOptimisticMessages((previous) => {
-          if (previous.length === 0) {
-            return [{ role: "assistant", content: event.chunk, pending: true }];
-          }
-
-          const next = [...previous];
-          const assistantIndex = next.findIndex((item) => item.role === "assistant");
-          if (assistantIndex === -1) {
-            next.push({ role: "assistant", content: event.chunk, pending: true });
-            return next;
-          }
-
-          const assistantMessage = next[assistantIndex];
-          next[assistantIndex] = {
-            ...assistantMessage,
-            content: `${assistantMessage.content ?? ""}${event.chunk}`,
-            pending: true,
-          };
-
-          return next;
-        });
-        return;
-      }
-
-      if (event.type === "error") {
-        handleSendError(event.error);
-      }
-    },
-    [clearError, handleSendError]
   );
 
   const handleSendMessage = useCallback(
     async (content: string) => {
       await sendChatMessage(content, {
         onBeforeSend: handleBeforeSend,
-        onStreamEvent: handleStreamEvent,
         onResponse: handleResponse,
         onError: handleSendError,
       });
     },
-    [handleBeforeSend, handleResponse, handleSendError, handleStreamEvent, sendChatMessage]
+    [handleBeforeSend, handleResponse, handleSendError, sendChatMessage]
   );
 
+  // Auto-send initial message when component mounts or initialMessage changes
   useEffect(() => {
+    // Only auto-send if we have an initial message, no existing conversation, and haven't sent yet
     if (!initialMessage || initialConversationId || hasAutoSentInitialMessage.current) {
       return;
     }
 
-    hasAutoSentInitialMessage.current = true;
-    void handleSendMessage(initialMessage);
-  }, [handleSendMessage, initialConversationId, initialMessage]);
+    // Use a small timeout to ensure all hooks and callbacks are initialized
+    const timer = setTimeout(() => {
+      hasAutoSentInitialMessage.current = true;
+
+      // Send the message directly using sendChatMessage
+      sendChatMessage(initialMessage, {
+        onBeforeSend: handleBeforeSend,
+        onResponse: handleResponse,
+        onError: handleSendError,
+      }).catch((err) => {
+        console.error("Failed to send initial message:", err);
+        hasAutoSentInitialMessage.current = false; // Allow retry on error
+        handleSendError();
+      });
+    }, 100); // Small delay to ensure everything is ready
+
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialMessage, initialConversationId, searchParams]); // Run when initialMessage, initialConversationId, or searchParams changes
 
   useEffect(() => {
     if (chatId || !initialMessage) {
@@ -236,7 +221,9 @@ export default function ChatPageContent({ chatId, initialMessage }: ChatPageCont
             </div>
           ) : combinedMessages.length === 0 ? (
             <div className="flex flex-1 items-center justify-center text-sm text-neutral-500 dark:text-neutral-400">
-              This conversation is empty. Send a message to get started.
+              {isSending || (initialMessage && !hasAutoSentInitialMessage.current)
+                ? "Sending message…"
+                : "This conversation is empty. Send a message to get started."}
             </div>
           ) : (
             <ul
@@ -274,9 +261,9 @@ export default function ChatPageContent({ chatId, initialMessage }: ChatPageCont
           )}
         </section>
 
-        {(streamError || senderError) && (
+        {senderError && (
           <div className="mx-auto mt-4 w-full max-w-3xl rounded-2xl border border-red-200 bg-red-50/80 px-2 py-3 text-sm text-red-700 dark:border-red-400/40 dark:bg-red-900/40 dark:text-red-200">
-            {streamError || senderError}
+            {senderError}
           </div>
         )}
 
@@ -285,7 +272,7 @@ export default function ChatPageContent({ chatId, initialMessage }: ChatPageCont
             <MessageComposer
               onSubmit={handleSendMessage}
               isSubmitting={isSending}
-              errorMessage={streamError || senderError}
+              errorMessage={senderError}
               placeholder="Ask Dalia anything about your finances, the market, or investing…"
             />
           </div>

@@ -1,18 +1,11 @@
-import os
-from pathlib import Path
+from backend.config.constants import validate_required_config  # noqa: F401
 
-from dotenv import load_dotenv
+from backend.routes import router as api_router
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+validate_required_config()
 
-# Load environment variables from backend/.env
-load_dotenv(BASE_DIR / ".env")
-load_dotenv(BASE_DIR / "env")
-load_dotenv()
-
-from backend.routes import router as api_router
 
 app = FastAPI(title="dalia backend", version="0.1.0")
 
